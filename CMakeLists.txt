@@ -13,6 +13,8 @@ find_package(Boost COMPONENTS filesystem REQUIRED)
 find_package(Boost COMPONENTS system REQUIRED)
 find_package(Boost COMPONENTS date_time REQUIRED)
 
+find_package(Pangolin 0.1 REQUIRED)
+
 
 
 
@@ -36,14 +38,18 @@ set(BOOST_ALL_DYN_LINK ON)   # force dynamic linking for all libraries
 
 add_executable(klg2oni 
                src/klg2oni.cpp
-  )
+	             src/RawLogReader.cpp
+	             src/
+               )
 
 target_link_libraries(klg2oni
                       ${ZLIB_LIBRARY}
                       ${Boost_SYSTEM_LIBRARIES}
                       ${Boost_THREAD_LIBRARIES}
+                      ${OpenCV_LIBS}
+                      ${Pangolin_LIBRARIES}
                       ${Boost_FILESYSTEM_LIBRARIES}
-                      /home/gzhang8/bin/OpenNI-Bin-Dev-Linux-x64-v1.5.7.10/Lib/libOpenNI.so
-                      /home/gzhang8/bin/OpenNI-Bin-Dev-Linux-x64-v1.5.7.10/Lib/libnimRecorder.so
-                      /home/gzhang8/bin/OpenNI-Bin-Dev-Linux-x64-v1.5.7.10/Lib/libnimMockNodes.so
+                      #/home/gzhang8/bin/OpenNI-Bin-Dev-Linux-x64-v1.5.7.10/Lib/libOpenNI.so
+                      #/home/gzhang8/bin/OpenNI-Bin-Dev-Linux-x64-v1.5.7.10/Lib/libnimRecorder.so
+                      #/home/gzhang8/bin/OpenNI-Bin-Dev-Linux-x64-v1.5.7.10/Lib/libnimMockNodes.so
 )

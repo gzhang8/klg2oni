@@ -26,6 +26,8 @@
 #include <XnCppWrapper.h>
 #include <XnPropNames.h>
 
+#include "RawLogReader.h"
+
 //---------------------------------------------------------------------------
 // Defines
 //---------------------------------------------------------------------------
@@ -47,36 +49,39 @@
 
 using namespace xn;
 
-void transformDepthMD(DepthMetaData& depthMD)
+void transformDepthMD(DepthMetaData& depthMD, unsigned short* depth)
 {
 	DepthMap& depthMap = depthMD.WritableDepthMap();
 	for (XnUInt32 y = 0; y < depthMap.YRes(); y++)
 	{
 		for (XnUInt32 x = 0; x < depthMap.XRes(); x++)
 		{
+
+      int frame_idx = y * depthMap.XRes() + x;
 			//Punch vertical cut lines in the depth image
 			//if ((x % 2) == 0)
 			{
-				depthMap(x, y) = (x + y)%1024;
+				depthMap(x, y) = depth[frame_idx];
 			}
 		}
 	}
 }
 
 
-void writeImageMD(ImageMetaData& imageMD)
+void writeImageMD(ImageMetaData& imageMD, unsigned char * rgb)
 {
 	RGB24Map& imageMap = imageMD.WritableRGB24Map();
 	for (XnUInt32 y = 0; y < imageMap.YRes(); y++)
 	{
 		for (XnUInt32 x = 0; x < imageMap.XRes(); x++)
 		{
+      int frame_idx = y * imageMap.XRes() + x;
 			//Punch vertical cut lines in the imageMap image
 			//if ((x % 2) == 0)
 			{
-				imageMap(x, y).nRed =  x % 128;
-				imageMap(x, y).nGreen =  y % 128;
-				imageMap(x, y).nBlue =  (x+y) % 128;
+				imageMap(x, y).nRed =  rgb[frame_idx * 3 + 0];
+				imageMap(x, y).nGreen = rgb[frame_idx * 3 + 1];
+				imageMap(x, y).nBlue =  rgb[frame_idx * 3 + 1];
 			}
 		}
 	}
@@ -85,20 +90,21 @@ void writeImageMD(ImageMetaData& imageMD)
 int main(int argc, char* argv[])
 {
 	XnStatus nRetVal = XN_STATUS_OK;
-	nRetVal = xnLogInitFromXmlFile(SAMPLE_XML_PATH);
-	if (nRetVal != XN_STATUS_OK)
-	{
-		printf("Log couldn't be opened: %s. Running without log", xnGetStatusString(nRetVal));
-	}
+	//nRetVal = xnLogInitFromXmlFile(SAMPLE_XML_PATH);
+	//if (nRetVal != XN_STATUS_OK)
+	//{
+	//	printf("Log couldn't be opened: %s. Running without log", xnGetStatusString(nRetVal));
+	//}
 
 	if (argc < 3)
 	{
-		printf("usage: %s <inputFile> <outputFile>\n", argv[0]);
+		printf("usage: %s <inputFile_klg> <outputFile_oni>\n", argv[0]);
 		return -1;
 	}
 
 	const char* strInputFile = argv[1];
 	const char* strOutputFile = argv[2];
+  RawLogReader klg_reader(strInputFile, false);// flip color;
 
 	Context context;
 	nRetVal = context.Init();
@@ -106,7 +112,8 @@ int main(int argc, char* argv[])
 
 	// open input file
 	Player player;
-	nRetVal = context.OpenFileRecording(strInputFile, player);
+	//nRetVal = context.OpenFileRecording(strInputFile, player);
+	nRetVal = context.OpenFileRecording("../src/boot.oni", player);
 	CHECK_RC(nRetVal, "Open input file");
 
 	// Get depth node from recording
@@ -152,21 +159,20 @@ int main(int argc, char* argv[])
 	nRetVal = player.GetNumFrames(depth.GetName(), nNumFrames);
 	CHECK_RC(nRetVal, "Get player number of frames");
 
-	DepthMetaData depthMD;
-        ImageMetaData imageMD;
+  // use them to set properties
+  depth.WaitAndUpdateData();
+  image.WaitAndUpdateData();
 
-	while ((nRetVal = depth.WaitAndUpdateData()) != XN_STATUS_EOF && (nRetVal = image.WaitAndUpdateData()) != XN_STATUS_EOF)
+	DepthMetaData depthMD;
+  ImageMetaData imageMD;
+
+	while (klg_reader.hasMore())
 	{
-		CHECK_RC(nRetVal, "Read next frame");
-		
+    klg_reader.getNext();
 		// Get depth meta data
 		depth.GetMetaData(depthMD);
-                image.GetMetaData(imageMD);
-	        printf("image format is RGB24 %d\n", XN_PIXEL_FORMAT_RGB24 == imageMD.PixelFormat());
-		if (imageMD.PixelFormat() == XN_PIXEL_FORMAT_MJPEG)
-                     printf("MJPEG");
-                else if (imageMD.PixelFormat() == XN_PIXEL_FORMAT_YUV422)
-                     printf("YUV");
+    image.GetMetaData(imageMD);
+
 		//-----------------------------------------------//
 		// Transform depth! This is the interesting part //
 		//-----------------------------------------------//
@@ -178,8 +184,10 @@ int main(int argc, char* argv[])
                 nRetVal = imageMD.MakeDataWritable();
 		CHECK_RC(nRetVal, "Make image data writable");
 
-		transformDepthMD(depthMD);
-                writeImageMD(imageMD);
+		transformDepthMD(depthMD, klg_reader.depth);
+    writeImageMD(imageMD, klg_reader.rgb);
+    auto time_stamp = klg_reader.timestamp;
+    int frame_id = klg_reader.currentFrame;
 
 		// Pass the transformed data to the mock depth generator
                 		/**
@@ -196,10 +204,10 @@ int main(int argc, char* argv[])
 		//}
 
 
-		nRetVal = mockDepth.SetData(depthMD);
+		nRetVal = mockDepth.SetData(depthMD, frame_id, time_stamp);
 		CHECK_RC(nRetVal, "Set mock node new data");
                 
-		nRetVal = mockImage.SetData(imageMD);
+		nRetVal = mockImage.SetData(imageMD, frame_id, time_stamp);
 		CHECK_RC(nRetVal, "Set mock node new data");
 
 		/* We need to call recorder.Record explicitly because we're not using WaitAndUpdateAll(). */
